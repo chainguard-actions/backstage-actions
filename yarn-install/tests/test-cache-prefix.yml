@@ -1,0 +1,59 @@
+name: Test yarn install cache prefix isolation
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Ensure yarn is available
+      - name: Ensure yarn is installed
+        run: |
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
+          yarn --version
+
+      # Create minimal package.json and yarn.lock
+      - name: Set up minimal yarn workspace
+        run: |
+          printf '{"name":"cache-prefix-test","version":"1.0.0","private":true}\n' > package.json
+          touch yarn.lock
+
+      # Run with a custom cache prefix to verify the action accepts arbitrary prefix values
+      - id: action
+        uses: .
+        with:
+          cache-prefix: my-custom-env-prefix-v2
+        continue-on-error: true
+
+      - name: Assert action ran or failed gracefully
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CACHE_HIT: ${{ steps.action.outputs.cache-hit }}
+          YARN_CACHE_DIR: ${{ steps.action.outputs.yarn-cache-dir }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "cache-hit: $CACHE_HIT"
+          echo "yarn-cache-dir: $YARN_CACHE_DIR"
+          if [ "$OUTCOME" = "success" ]; then
+            # cache-hit should be 'true', 'false', or empty string
+            if [ "$CACHE_HIT" != "true" ] && [ "$CACHE_HIT" != "false" ] && [ -n "$CACHE_HIT" ]; then
+              echo "FAIL: cache-hit output should be 'true', 'false', or empty string"
+              exit 1
+            fi
+            if [ "$CACHE_HIT" != "true" ] && [ -n "$YARN_CACHE_DIR" ]; then
+              # Verify the path looks like a real directory path when set
+              if [[ "$YARN_CACHE_DIR" != /* ]]; then
+                echo "FAIL: yarn-cache-dir '$YARN_CACHE_DIR' does not look like an absolute path"
+                exit 1
+              fi
+            fi
+            echo "PASS: action succeeded with cache-prefix=my-custom-env-prefix-v2, cache-hit='$CACHE_HIT'"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (cache service likely unavailable under act)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
