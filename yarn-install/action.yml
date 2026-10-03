@@ -1,0 +1,61 @@
+name: Yarn Install
+description: Runs yarn install using caching with monorepo support
+inputs:
+  cache-prefix:
+    description: The prefix to use for all cache keys to keep different environments separate
+    required: true
+outputs:
+  cache-hit:
+    description: Whether the node_modules cache got an exact cache hit
+    value: ${{ steps.cache-modules.outputs.cache-hit }}
+  yarn-cache-dir:
+    description: The location of the global yarn cache
+    value: ${{ steps.yarn-cache.outputs.dir }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    # Cache every node_modules folder inside the monorepo
+    - name: cache all node_modules
+      id: cache-modules
+      uses: chainguard-actions/actions-cache@1a492a110f951652a0d2d3327bc20ee36867788e # v4
+      with:
+        path: '**/node_modules'
+        # We use both yarn.lock and package.json as cache keys to ensure that
+        # changes to local monorepo packages bust the cache.
+        key: ${{ inputs.cache-prefix }}-node_modules-${{ hashFiles('yarn.lock', '**/package.json') }}
+    # If we get a cache hit for node_modules, there's no need to bring in the global
+    # yarn cache or run yarn install, as all dependencies will be installed already.
+    - name: find location of global yarn cache
+      id: yarn-cache
+      if: steps.cache-modules.outputs.cache-hit != 'true'
+      run: echo "dir=$([[ "$(yarn --version)" =~ "1.*" ]] && yarn cache dir || yarn config get cacheFolder)" >> $GITHUB_OUTPUT
+      shell: bash
+    - name: cache global yarn cache
+      uses: chainguard-actions/actions-cache@1a492a110f951652a0d2d3327bc20ee36867788e # v4
+      if: steps.cache-modules.outputs.cache-hit != 'true'
+      with:
+        path: ${{ steps.yarn-cache.outputs.dir }}
+        key: ${{ inputs.cache-prefix }}-yarn-${{ hashFiles('yarn.lock') }}
+        restore-keys: |
+          ${{ inputs.cache-prefix }}-yarn-
+    - name: yarn install
+      if: steps.cache-modules.outputs.cache-hit != 'true'
+      run: '[[ "$(yarn --version)" =~ "1.*" ]] && yarn install --frozen-lockfile || yarn install --immutable'
+      shell: bash

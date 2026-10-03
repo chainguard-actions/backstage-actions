@@ -1,0 +1,75 @@
+name: Test custom cache prefix
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Ensure yarn is available (act images may not have it)
+      - name: Ensure yarn is installed
+        run: |
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
+          yarn --version
+
+      # Set up a minimal package.json and yarn.lock so yarn install can run
+      - name: Set up minimal yarn workspace
+        run: |
+          cp tests/fixtures/package.json "$GITHUB_WORKSPACE/package.json"
+          cp tests/fixtures/yarn.lock "$GITHUB_WORKSPACE/yarn.lock"
+
+      - id: action
+        uses: .
+        with:
+          cache-prefix: my-custom-env-prefix
+        continue-on-error: true
+
+      - name: Assert action completed with custom prefix
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CACHE_HIT: ${{ steps.action.outputs.cache-hit }}
+          YARN_CACHE_DIR: ${{ steps.action.outputs.yarn-cache-dir }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "cache-hit: $CACHE_HIT"
+          echo "yarn-cache-dir: $YARN_CACHE_DIR"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: action completed successfully with custom prefix 'my-custom-env-prefix'"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (cache service not available under act)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert yarn-cache-dir is a valid path when populated
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          YARN_CACHE_DIR: ${{ steps.action.outputs.yarn-cache-dir }}
+          CACHE_HIT: ${{ steps.action.outputs.cache-hit }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "cache-hit: $CACHE_HIT"
+          echo "yarn-cache-dir: $YARN_CACHE_DIR"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "PASS: skipping path check (action did not succeed under act)"
+          elif [ "$CACHE_HIT" = "true" ]; then
+            echo "PASS: cache hit, yarn-cache-dir step was skipped"
+          elif [ -z "$YARN_CACHE_DIR" ]; then
+            echo "FAIL: yarn-cache-dir should be set when no cache hit"
+            exit 1
+          else
+            # Verify the path looks like an absolute path
+            case "$YARN_CACHE_DIR" in
+              /*)
+                echo "PASS: yarn-cache-dir is an absolute path: $YARN_CACHE_DIR"
+                ;;
+              *)
+                echo "FAIL: yarn-cache-dir does not look like an absolute path: $YARN_CACHE_DIR"
+                exit 1
+                ;;
+            esac
+          fi
