@@ -8,8 +8,8 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
-| v0.6.17 | [`v0.6.17`](https://github.com/chainguard-actions/backstage-actions/tree/v0.6.17) | [`b3c1841`](https://github.com/backstage/actions/commit/b3c1841fd69e1658ac631afafd0fb140a2309024) |
-| v0.7.13 | [`v0.7.13`](https://github.com/chainguard-actions/backstage-actions/tree/v0.7.13) | — |
+| v0.6.17 | [`v0.6.17`](https://github.com/chainguard-actions/backstage-actions/tree/v0.6.17) | — |
+| v0.7.13 | [`v0.7.13`](https://github.com/chainguard-actions/backstage-actions/tree/v0.7.13) | [`a9e1b58`](https://github.com/backstage/actions/commit/a9e1b58ad52aaf319264e18c3ff6887a4c824b52) |
 
 ## Privacy
 
